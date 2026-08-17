@@ -1,0 +1,9 @@
+{
+  "apiKey": "AIzaSyDemoPlaceholderForDevelopmentModeOnly1234",
+  "authDomain": "cuadrantes-app.firebaseapp.com",
+  "projectId": "cuadrantes-app",
+  "storageBucket": "cuadrantes-app.appspot.com",
+  "messagingSenderId": "100000000000",
+  "appId": "1:100000000000:web:abcdef123456",
+  "firestoreDatabaseId": "(default)"
+}

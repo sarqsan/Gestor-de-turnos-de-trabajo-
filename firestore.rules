@@ -1,0 +1,186 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Helper functions
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return isSignedIn() && request.auth.uid == uid;
+    }
+
+    // Helper to verify if user is an active administrator based purely on Firestore RBAC
+    function isAdmin() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/cuentas/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/cuentas/$(request.auth.uid)).data.rol == 'ADMIN' &&
+        get(/databases/$(database)/documents/cuentas/$(request.auth.uid)).data.activo == true;
+    }
+
+    // Helper to check if a specific persona document is assigned to the authenticated user
+    function isUserAssignedPersona(personaId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/cuentas/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/cuentas/$(request.auth.uid)).data.personaId == personaId;
+    }
+
+    // Personas: Admins can list and manage all. Regular users can ONLY get their own assigned persona.
+    match /personas/{personaId} {
+      allow get: if isAdmin() || isUserAssignedPersona(personaId);
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Cuentas: Admins can list and manage all. Users can only get their own account.
+    match /cuentas/{cuentaId} {
+      allow get: if isSignedIn() && (isAdmin() || isOwner(cuentaId));
+      allow list: if isAdmin();
+      allow create, update, delete: if isAdmin();
+    }
+
+    // Audit logs: Admins can read and append. Logs are strictly immutable (cannot update/delete).
+    // Regular users cannot read or write audit logs.
+    match /auditLogs/{logId} {
+      allow read: if isAdmin();
+      allow create: if isAdmin();
+      allow update, delete: if false;
+    }
+
+    // Ciclos: Admins can read and manage.
+    match /ciclos/{cicloId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Configuración general: Admins can read and manage.
+    match /configuracion/{configId} {
+      allow read: if isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // Cuadrantes y Servicios: Todos los usuarios autenticados pueden consultar cuadrantes.
+    // Solo los administradores pueden crear, modificar o eliminar cuadrantes y servicios.
+    match /cuadrantes/{cuadranteId} {
+      allow read: if isSignedIn();
+      allow create, update, delete: if isAdmin();
+
+      match /servicios/{servicioId} {
+        allow read: if isSignedIn();
+        allow create, update, delete: if isAdmin();
+      }
+    }
+
+    // Solicitudes de cambio entre compañeros
+    match /solicitudes_cambio/{solicitudId} {
+      allow read: if isAdmin() || (
+        isSignedIn() && (
+          resource.data.solicitanteUid == request.auth.uid ||
+          resource.data.destinatarioUid == request.auth.uid ||
+          isUserAssignedPersona(resource.data.solicitantePersonaId) ||
+          isUserAssignedPersona(resource.data.destinatarioPersonaId)
+        )
+      );
+      allow create: if isAdmin() || (
+        isSignedIn() && (
+          request.resource.data.solicitanteUid == request.auth.uid ||
+          isUserAssignedPersona(request.resource.data.solicitantePersonaId)
+        )
+      );
+      allow update: if isAdmin() || (
+        isSignedIn() && (
+          resource.data.solicitanteUid == request.auth.uid ||
+          resource.data.destinatarioUid == request.auth.uid ||
+          isUserAssignedPersona(resource.data.solicitantePersonaId) ||
+          isUserAssignedPersona(resource.data.destinatarioPersonaId)
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Incidencias de ausencia y coberturas por imaginaria
+    match /incidencias_ausencia/{incidenciaId} {
+      allow read: if isAdmin() || (
+        isSignedIn() && (
+          isUserAssignedPersona(resource.data.titularPersonaId) ||
+          isUserAssignedPersona(resource.data.imaginariaCaboPersonaId) ||
+          isUserAssignedPersona(resource.data.imaginariaSoldadoPersonaId)
+        )
+      );
+      allow create: if isAdmin() || (
+        isSignedIn() && isUserAssignedPersona(request.resource.data.titularPersonaId)
+      );
+      allow update: if isAdmin() || (
+        isSignedIn() && (
+          isUserAssignedPersona(resource.data.imaginariaCaboPersonaId) ||
+          isUserAssignedPersona(resource.data.imaginariaSoldadoPersonaId) ||
+          isUserAssignedPersona(resource.data.titularPersonaId)
+        )
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Partes médicos confidenciales: SOLO el titular asignado y los administradores tienen acceso.
+    // Ningún otro usuario puede listar o leer partes médicos de compañeros.
+    match /partes_medicos/{parteId} {
+      allow read: if isAdmin() || (
+        isSignedIn() && isUserAssignedPersona(resource.data.personaId)
+      );
+      allow create: if isAdmin() || (
+        isSignedIn() && isUserAssignedPersona(request.resource.data.personaId)
+      );
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // Notificaciones operativas
+    match /notificaciones/{notificacionId} {
+      allow read: if isAdmin() || (
+        isSignedIn() && (
+          resource.data.esParaTodos == true ||
+          resource.data.destinatarioUid == request.auth.uid ||
+          isUserAssignedPersona(resource.data.destinatarioPersonaId)
+        )
+      );
+      allow create: if isSignedIn();
+      allow update: if isAdmin() || (
+        isSignedIn() && (
+          resource.data.destinatarioUid == request.auth.uid ||
+          isUserAssignedPersona(resource.data.destinatarioPersonaId)
+        )
+      );
+      allow delete: if isAdmin() || (
+        isSignedIn() && (
+          resource.data.destinatarioUid == request.auth.uid ||
+          isUserAssignedPersona(resource.data.destinatarioPersonaId)
+        )
+      );
+    }
+
+    // Chat interno (Privado, Canal de Grupo y Avisos Administrativos)
+    match /mensajes_chat/{mensajeId} {
+      allow read: if isAdmin() || (
+        isSignedIn() && (
+          resource.data.tipo == 'GRUPO' ||
+          resource.data.tipo == 'ADMINISTRATIVO' ||
+          resource.data.autorUid == request.auth.uid ||
+          (resource.data.destinatariosUids != null && request.auth.uid in resource.data.destinatariosUids) ||
+          isUserAssignedPersona(resource.data.destinatarioPersonaId)
+        )
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.tipo != 'ADMINISTRATIVO' || isAdmin()
+      ) && request.resource.data.autorUid == request.auth.uid;
+      allow update: if isSignedIn() && (
+        isAdmin() || request.resource.data.diff(resource.data).affectedKeys().hasOnly(['leidoPor'])
+      );
+      allow delete: if isAdmin();
+    }
+
+    // Default safety deny: all other paths are rejected
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

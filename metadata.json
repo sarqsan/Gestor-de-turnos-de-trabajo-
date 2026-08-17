@@ -1,0 +1,6 @@
+{
+  "name": "Gestión de Personal y Cuadrante",
+  "description": "Sistema modular de gestión de personal, ciclos, cuentas, permisos, motor de simulación y generación de cuadrantes 24h con auditoría.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
