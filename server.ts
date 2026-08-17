@@ -80,7 +80,7 @@ REGLAS CRÍTICAS DE EXTRACCIÓN:
     parts.push({ text: promptText });
 
     const response = await ai.models.generateContent({
-      model: 'gemini-3.7-flash',
+      model: 'gemini-3.6-flash',
       contents: { parts },
       config: {
         responseMimeType: 'application/json',
